@@ -1,0 +1,342 @@
+<head>
+    
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <center>
+        <input id="thoughtInput" placeholder="Type a thought here..." class="css-input">
+        <br>
+        <button type="submit" id="tossThought" class="css-button">Toss that thought</button>
+    </center>
+
+    <script>
+        const canvas = document.getElementById("canvas")
+        canvas.width = window.innerWidth
+        canvas.height = window.innerHeight
+
+        const ctx = canvas.getContext("2d")
+
+        const tossThoughtButton = document.getElementById("tossThought")
+        const thoughtInput = document.getElementById("thoughtInput")
+
+
+        const backgroundGradient = ctx.createLinearGradient(canvas.width-(canvas.width/1.2), 0, 0, canvas.height)
+        backgroundGradient.addColorStop(0, "#000000");
+        backgroundGradient.addColorStop(1, "#16062D");
+
+        let waveBase = canvas.height - (canvas.height / 3)
+        let wavePoints = []
+        for(let x=0; x<canvas.width; x+=1){
+            wavePoints.push({
+                x: x,
+                y: waveBase,
+            })
+        }
+
+        function lerp(start, end, amt) {
+            return start + (end - start) * amt;
+        }
+        function lerpThree(a, b, c, amt) {
+            if (amt <= 0.5) {
+                return lerp(a, b, amt * 2); // Lerp from a to b for the first half
+            } else {
+                return lerp(b, c, (amt - 0.5) * 2); // Lerp from b to c for the second half
+            }
+        }
+
+        let t = 0
+        var lastUpdate = Date.now();
+        let noise = null
+
+        const noiseCanvas = document.createElement("canvas")
+        noiseCanvas.width = canvas.width
+        noiseCanvas.height = canvas.height
+        const noiseCtx = noiseCanvas.getContext("2d")
+        let waterPattern = null
+
+        let grabbingElement = null
+        let mousePos = null
+        let fallableElements = []
+        let waterSplashes = []
+
+        function splash(x){
+            for(let i=0; i<20; i++){
+                waterSplashes.push({
+                    x: x,
+                    y: waveBase,
+                    vx: (Math.random() - 0.5) * 380,
+                    vy: (-1 * (Math.random() + 2)) * 120,
+                    rotation: Math.random() * (Math.PI*2),
+                    vr: (Math.random() > 0.5 ? -1 : 1) * Math.random() * Math.PI
+                })
+            }
+        }
+
+        let stars = []
+        for(let x=0; x<canvas.width; x+=5){
+            for(let y=0;y<waveBase; y+=5){
+                if(Math.random() >= 0.001){ continue }
+                stars.push({
+                    x: x,
+                    y: y,
+                    sizeOffset: Math.random() * 100,
+                    loopTime: Math.random() * 10,
+                    rotation: Math.random() * (Math.PI*2),
+                })
+                y += 12
+                x += 3
+            }
+        }
+
+        tossThoughtButton.onclick = (event)=>{
+            event.preventDefault()
+            let thought = thoughtInput.value
+            thoughtInput.value = ""
+
+            let thoughtData = document.createElement("h2")
+            thoughtData.innerText = thought
+            thoughtData.style.top = "0px"
+            thoughtData.style.left = canvas.width/2 + "px"
+            thoughtData.classList.add("moveable")
+            document.body.appendChild(thoughtData)
+
+            thoughtData.onmousedown = (e)=>{
+                for(let i=0; i<fallableElements.length; i++){
+                    grabbingElement = thoughtData
+
+                    let ele = fallableElements[i]
+                    if(ele["element"] == thoughtData){
+                        ele["offsetX"] = mousePos["x"] - ele["x"]
+                        ele["offsetY"] = mousePos["y"] - ele["y"]
+                    }
+                }
+            }
+            fallableElements.push({
+                element: thoughtData,
+                x: canvas.width/2,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                offsetX: 0,
+                offsetY: 0,
+            })
+        }
+
+        document.addEventListener("mousemove", (e)=>{
+            mousePos = {x: e.clientX, y: e.clientY}
+        })
+        document.addEventListener("mouseup", (e)=>{
+            grabbingElement = null
+        })
+
+        setInterval(()=>{
+
+            let now = Date.now();
+            let dt = now - lastUpdate;
+            lastUpdate = now;
+            dt = dt / 1000
+
+            for(let i=0; i<fallableElements.length; i++){
+                let ele = fallableElements[i]
+
+                let element = ele["element"]
+                ele["vy"] += 9.8 / 4 * dt
+
+                if(grabbingElement == element){
+                    ele["vy"] = 0
+                    ele["x"] = mousePos["x"] - ele["offsetX"]
+                    ele["y"] = mousePos["y"] - ele["offsetY"]
+                }
+                else if(ele["y"] > waveBase){
+                    let centerX = ele["x"] + element.getBoundingClientRect()["width"]/2
+
+                    splash(centerX)
+                    fallableElements.splice(i, 1)
+                    i--
+                    element.remove()
+                }
+
+                ele["x"] += ele["vx"]
+                ele["y"] += ele["vy"]
+
+                element.style.top = ele["y"] + "px"
+                element.style.left = ele["x"] + "px"
+            }
+
+            ctx.fillStyle = backgroundGradient
+            ctx.fillRect(0,0, canvas.width, canvas.height)
+
+            for(let i=0; i<stars.length; i++){
+                let star = stars[i]
+                let starLoopTime = star["loopTime"] + 20
+                let lerpTimeValue = ( (t + star["sizeOffset"]) % starLoopTime) / starLoopTime
+                let size = lerpThree(3, 5, 3, lerpTimeValue)
+                ctx.fillStyle = "#ffffff"
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.translate(star["x"], star["y"]);
+                ctx.rotate(star["rotation"]);
+                ctx.rect( -size/2, -size/2, size,size);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            for(let i=0; i<waterSplashes.length; i++){
+                let splash = waterSplashes[i]
+                splash["vy"] += 1
+                splash["x"] += splash["vx"] * dt
+                splash["y"] += splash["vy"] * dt
+                splash["rotation"] += splash["vr"] * dt
+
+                if(splash["y"] > canvas.height){
+                    waterSplashes.splice(i, 1)
+                    i--
+                    continue
+                }
+
+                let size = 10
+                ctx.fillStyle = "#6666ff"
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.translate(splash["x"], splash["y"]);
+                ctx.rotate(splash["rotation"]);
+                ctx.rect( -size/2, -size/2, size, size);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Draw Wave
+            ctx.beginPath();
+            ctx.fillStyle = "#4444ff"
+            ctx.strokeStyle = "#4444ff"
+            ctx.moveTo(-5, wavePoints[0].y);
+            for(let i=1; i<wavePoints.length; i++){
+                ctx.lineTo(wavePoints[i].x, wavePoints[i].y);
+
+                let waveX = wavePoints[i].x * 0.01
+
+                wavePoints[i].y = 13 * Math.sin(waveX + t)
+
+                wavePoints[i].y += 3 * Math.sin(waveX * 2)
+
+                wavePoints[i].y += 5 * Math.sin((waveX+t) / 2)
+
+                wavePoints[i].y += waveBase // make sure it is where the wave should be, wave offset if you will
+            }
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.lineTo(0, canvas.height);
+            t += dt
+            ctx.closePath();
+            ctx.fillStyle = waterPattern
+            ctx.fill();
+
+            waterPattern = "#454af5"
+
+            
+        },1)
+    </script>
+
+    <style>
+        body{
+            font-family: monospace;
+            user-select: none;
+        }
+
+        #canvas{
+            position: absolute;
+            left: 0px;
+            top: 0px;
+            z-index: -999;
+        }
+
+        .moveable{
+            position: absolute;
+            z-index: 1000;
+            color: white;
+        }
+
+        .css-input {
+            box-sizing: border-box;
+            margin: 0px;
+            min-width: 0px;
+            display: block;
+            width: 40%;
+            padding: 8px;
+            appearance: none;
+            font-size: inherit;
+            line-height: inherit;
+            border-radius: 4px;
+            background-color: var(--theme-ui-colors-elevated,#3d383c);
+            color: var(--theme-ui-colors-text,#ffffff);
+            font-family: inherit;
+            border: 0px;
+        }
+
+        .css-button {
+            box-sizing: border-box;
+            margin: 0;
+            min-width: 0;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            display: inline-block;
+            text-align: center;
+            line-height: inherit;
+            -webkit-text-decoration: none;
+            text-decoration: none;
+            font-size: inherit;
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            color: var(--theme-ui-colors-white,#ffffff);
+            background-color: var(--theme-ui-colors-primary,#ec3750);
+            border: 0;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 700;
+            border-radius: 99999px;
+            display: -webkit-inline-box;
+            display: -webkit-inline-flex;
+            display: -ms-inline-flexbox;
+            display: inline-flex;
+            -webkit-align-items: center;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            -webkit-box-pack: center;
+            -webkit-justify-content: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.125);
+            -webkit-letter-spacing: 0.009em;
+            -moz-letter-spacing: 0.009em;
+            -ms-letter-spacing: 0.009em;
+            letter-spacing: 0.009em;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-transition: -webkit-transform .125s ease-in-out,box-shadow .125s ease-in-out;
+            -webkit-transition: transform .125s ease-in-out,box-shadow .125s ease-in-out;
+            transition: transform .125s ease-in-out,box-shadow .125s ease-in-out;
+        }
+
+        h2 {
+            box-sizing: border-box;
+            margin: 0;
+            min-width: 0;
+            margin-top: 16px;
+            font-size: 20px;
+            font-weight: 400;
+            -webkit-letter-spacing: 0.009em;
+            -moz-letter-spacing: 0.009em;
+            -ms-letter-spacing: 0.009em;
+            letter-spacing: 0.009em;
+            line-height: 1.25;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+    </style>
+</body>
